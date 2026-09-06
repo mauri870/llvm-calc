@@ -25,7 +25,7 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     // Emit a full mini LLVM IR program:
-    //   @fmt = private constant [N x i8] c"result: %g\n\00"
+    //   @fmt = private constant [N x i8] c"%g\n\00"
     //   declare i32 @printf(ptr, ...)
     //   define i32 @main() { ...; call printf(fmt, <expr>); ret i32 0 }
     pub fn compile(&self, expr: &Expr) {
@@ -35,7 +35,7 @@ impl<'ctx> CodeGen<'ctx> {
         let printf_type = i32_type.fn_type(&[ptr_type.into()], true);
         let printf = self.module.add_function("printf", printf_type, None);
 
-        let fmt_str = self.context.const_string(b"result: %g\n", true);
+        let fmt_str = self.context.const_string(b"%g\n", true);
         let fmt_global = self.module.add_global(fmt_str.get_type(), None, "fmt");
         fmt_global.set_initializer(&fmt_str);
         fmt_global.set_linkage(Linkage::Private);
