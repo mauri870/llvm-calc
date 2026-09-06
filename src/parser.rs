@@ -3,7 +3,7 @@ use pest::iterators::Pairs;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest_derive::Parser;
 
-use crate::ast::{BinOp, Block, CmpOp, Cond, Expr, Program};
+use crate::ast::{BinOp, Block, CmpOp, Cond, Expr, FnDef, Program};
 
 #[derive(Parser)]
 #[grammar = "src/calc.pest"]
@@ -13,11 +13,26 @@ pub fn parse(input: &str) -> Result<Program, String> {
     let pairs = CalcParser::parse(Rule::program, input)
         .map_err(|e| e.to_string())?;
 
+    let mut functions = Vec::new();
     let mut bindings = Vec::new();
     let mut body = None;
 
     for pair in pairs {
         match pair.as_rule() {
+            Rule::fn_def => {
+                let mut inner = pair.into_inner();
+                let name = inner.next().unwrap().as_str().to_string();
+                let params_pair = inner.next().unwrap(); // Rule::params
+                let body_pair = inner.next().unwrap();   // Rule::expr
+                let params = params_pair.into_inner()
+                    .map(|p| p.as_str().to_string())
+                    .collect();
+                functions.push(FnDef {
+                    name,
+                    params,
+                    body: build_expr(body_pair.into_inner()),
+                });
+            }
             Rule::assign => {
                 let mut inner = pair.into_inner();
                 let name = inner.next().unwrap().as_str().to_string();
@@ -32,7 +47,7 @@ pub fn parse(input: &str) -> Result<Program, String> {
         }
     }
 
-    Ok(Program { bindings, body: body.unwrap() })
+    Ok(Program { functions, bindings, body: body.unwrap() })
 }
 
 fn build_expr(pairs: Pairs<Rule>) -> Expr {
@@ -42,12 +57,13 @@ fn build_expr(pairs: Pairs<Rule>) -> Expr {
 
     pratt
         .map_primary(|primary| match primary.as_rule() {
-            Rule::number   => Expr::Number(primary.as_str().parse().unwrap()),
-            Rule::ident    => Expr::Var(primary.as_str().to_string()),
-            Rule::neg      => Expr::Neg(Box::new(build_expr(primary.into_inner()))),
-            Rule::expr     => build_expr(primary.into_inner()),
-            Rule::if_expr  => build_if(primary.into_inner()),
+            Rule::number     => Expr::Number(primary.as_str().parse().unwrap()),
+            Rule::ident      => Expr::Var(primary.as_str().to_string()),
+            Rule::neg        => Expr::Neg(Box::new(build_expr(primary.into_inner()))),
+            Rule::expr       => build_expr(primary.into_inner()),
+            Rule::if_expr    => build_if(primary.into_inner()),
             Rule::while_expr => build_while(primary.into_inner()),
+            Rule::call       => build_call(primary.into_inner()),
             rule => unreachable!("unexpected primary rule: {rule:?}"),
         })
         .map_infix(|left, op, right| Expr::BinOp {
@@ -76,12 +92,21 @@ fn build_if(mut pairs: Pairs<Rule>) -> Expr {
 }
 
 fn build_while(mut pairs: Pairs<Rule>) -> Expr {
-    let cond_pair = pairs.next().unwrap();  // Rule::cond
-    let block_pair = pairs.next().unwrap(); // Rule::block
+    let cond_pair  = pairs.next().unwrap();
+    let block_pair = pairs.next().unwrap();
     Expr::While {
         cond: Box::new(build_cond(cond_pair.into_inner())),
         body: Box::new(build_block(block_pair.into_inner())),
     }
+}
+
+fn build_call(mut pairs: Pairs<Rule>) -> Expr {
+    let name = pairs.next().unwrap().as_str().to_string(); // ident
+    let args_pair = pairs.next().unwrap();                  // args
+    let args = args_pair.into_inner()
+        .map(|e| build_expr(e.into_inner()))
+        .collect();
+    Expr::Call { name, args }
 }
 
 fn build_block(pairs: Pairs<Rule>) -> Block {

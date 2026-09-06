@@ -16,11 +16,19 @@ cond  =  { expr ~ cmpop ~ expr }
 
 if_expr    = { "if" ~ cond ~ "then" ~ expr ~ "else" ~ expr }
 
-// A block is zero or more assignments followed by a result expression
+// A block is zero or more assignments followed by a result expression,
+// delimited by the caller (parens in while_expr).
 block      = { (assign ~ ";")* ~ expr }
 while_expr = { "while" ~ cond ~ "do" ~ "(" ~ block ~ ")" }
 
-primary = _{ number | if_expr | while_expr | "(" ~ expr ~ ")" | neg | ident }
+// Function definitions and calls
+params  = { (ident ~ ("," ~ ident)*)? }
+args    = { (expr ~ ("," ~ expr)*)? }
+fn_def  = { "fn" ~ ident ~ "(" ~ params ~ ")" ~ "=" ~ expr }
+call    = { ident ~ "(" ~ args ~ ")" }
+
+// call must come before ident so f(x) isn't parsed as just f
+primary = _{ number | if_expr | while_expr | call | "(" ~ expr ~ ")" | neg | ident }
 
 add = { "+" }
 sub = { "-" }
@@ -29,4 +37,4 @@ div = { "/" }
 
 expr    =  { primary ~ ((add | sub | mul | div) ~ primary)* }
 assign  =  { ident ~ "=" ~ expr }
-program = _{ SOI ~ (assign ~ ";")* ~ expr ~ EOI }
+program = _{ SOI ~ (fn_def ~ ";")* ~ (assign ~ ";")* ~ expr ~ EOI }

@@ -10,7 +10,7 @@ use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::values::{FloatValue, FunctionValue, PointerValue};
 
-use crate::ast::{BinOp, Block, CmpOp, Cond, Expr, Program};
+use crate::ast::{BinOp, Block, CmpOp, Cond, Expr, FnDef, Program};
 
 pub struct CodeGen<'ctx> {
     context: &'ctx Context,
@@ -27,16 +27,6 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    // Emit:
-    //   @fmt = private constant [N x i8] c"%g\n\00"
-    //   declare i32 @printf(ptr, ...)
-    //   define i32 @main() {
-    //     %x = alloca double; store <val>, %x   <- one per binding
-    //     ...
-    //     %result = <body expr>
-    //     call printf(fmt, %result)
-    //     ret i32 0
-    //   }
     pub fn compile(&self, program: &Program) -> Result<(), String> {
         let i32_type = self.context.i32_type();
         let f64_type = self.context.f64_type();
@@ -51,28 +41,73 @@ impl<'ctx> CodeGen<'ctx> {
         fmt_global.set_linkage(Linkage::Private);
         fmt_global.set_constant(true);
 
+        // Pass 1: declare all user-defined function signatures.
+        // This must happen before compiling any body so that recursive and
+        // mutually-recursive calls can reference functions not yet defined.
+        let fns = self.declare_functions(&program.functions);
+
+        // Pass 2: compile each function body into its own basic blocks.
+        for fn_def in &program.functions {
+            self.compile_fn(fn_def, &fns)?;
+        }
+
+        // Compile @main.
         let main_fn = self.module.add_function("main", i32_type.fn_type(&[], false), None);
         let entry = self.context.append_basic_block(main_fn, "entry");
         self.builder.position_at_end(entry);
 
         let mut vars: HashMap<String, PointerValue<'ctx>> = HashMap::new();
         for (name, expr) in &program.bindings {
-            let val = self.compile_expr(expr, &mut vars, main_fn)?;
+            let val = self.compile_expr(expr, &mut vars, main_fn, &fns)?;
             let ptr = self.builder.build_alloca(f64_type, name).unwrap();
             self.builder.build_store(ptr, val).unwrap();
             vars.insert(name.clone(), ptr);
         }
 
-        let result = self.compile_expr(&program.body, &mut vars, main_fn)?;
+        let result = self.compile_expr(&program.body, &mut vars, main_fn, &fns)?;
 
         self.builder
             .build_call(printf, &[fmt_global.as_pointer_value().into(), result.into()], "")
             .unwrap();
-
         self.builder
             .build_return(Some(&i32_type.const_int(0, false)))
             .unwrap();
 
+        Ok(())
+    }
+
+    fn declare_functions(&self, defs: &[FnDef]) -> HashMap<String, FunctionValue<'ctx>> {
+        let f64_type = self.context.f64_type();
+        let mut fns = HashMap::new();
+        for def in defs {
+            let param_types: Vec<_> = (0..def.params.len()).map(|_| f64_type.into()).collect();
+            let fn_type = f64_type.fn_type(&param_types, false);
+            let func = self.module.add_function(&def.name, fn_type, None);
+            fns.insert(def.name.clone(), func);
+        }
+        fns
+    }
+
+    fn compile_fn(
+        &self,
+        def: &FnDef,
+        fns: &HashMap<String, FunctionValue<'ctx>>,
+    ) -> Result<(), String> {
+        let f64_type = self.context.f64_type();
+        let func = fns[&def.name];
+        let entry = self.context.append_basic_block(func, "entry");
+        self.builder.position_at_end(entry);
+
+        let mut vars: HashMap<String, PointerValue<'ctx>> = HashMap::new();
+        for (i, name) in def.params.iter().enumerate() {
+            let val = func.get_nth_param(i as u32).unwrap().into_float_value();
+            let ptr = self.builder.build_alloca(f64_type, name).unwrap();
+            self.builder.build_store(ptr, val).unwrap();
+            vars.insert(name.clone(), ptr);
+        }
+
+        let result = self.compile_expr(&def.body, &mut vars, func, fns)?;
+        self.builder.build_return(Some(&result)).unwrap();
         Ok(())
     }
 
@@ -84,10 +119,11 @@ impl<'ctx> CodeGen<'ctx> {
         block: &Block,
         vars: &mut HashMap<String, PointerValue<'ctx>>,
         function: FunctionValue<'ctx>,
+        fns: &HashMap<String, FunctionValue<'ctx>>,
     ) -> Result<FloatValue<'ctx>, String> {
         let f64_type = self.context.f64_type();
         for (name, expr) in &block.bindings {
-            let val = self.compile_expr(expr, vars, function)?;
+            let val = self.compile_expr(expr, vars, function, fns)?;
             if let Some(&ptr) = vars.get(name.as_str()) {
                 self.builder.build_store(ptr, val).unwrap();
             } else {
@@ -96,7 +132,7 @@ impl<'ctx> CodeGen<'ctx> {
                 vars.insert(name.clone(), ptr);
             }
         }
-        self.compile_expr(&block.body, vars, function)
+        self.compile_expr(&block.body, vars, function, fns)
     }
 
     fn compile_expr(
@@ -104,6 +140,7 @@ impl<'ctx> CodeGen<'ctx> {
         expr: &Expr,
         vars: &mut HashMap<String, PointerValue<'ctx>>,
         function: FunctionValue<'ctx>,
+        fns: &HashMap<String, FunctionValue<'ctx>>,
     ) -> Result<FloatValue<'ctx>, String> {
         match expr {
             Expr::Number(n) => Ok(self.context.f64_type().const_float(*n)),
@@ -116,12 +153,12 @@ impl<'ctx> CodeGen<'ctx> {
                     .into_float_value())
             }
             Expr::Neg(inner) => {
-                let val = self.compile_expr(inner, vars, function)?;
+                let val = self.compile_expr(inner, vars, function, fns)?;
                 Ok(self.builder.build_float_neg(val, "neg").unwrap())
             }
             Expr::BinOp { op, left, right } => {
-                let l = self.compile_expr(left, vars, function)?;
-                let r = self.compile_expr(right, vars, function)?;
+                let l = self.compile_expr(left, vars, function, fns)?;
+                let r = self.compile_expr(right, vars, function, fns)?;
                 Ok(match op {
                     BinOp::Add => self.builder.build_float_add(l, r, "add").unwrap(),
                     BinOp::Sub => self.builder.build_float_sub(l, r, "sub").unwrap(),
@@ -130,10 +167,21 @@ impl<'ctx> CodeGen<'ctx> {
                 })
             }
             Expr::If { cond, then, else_ } => {
-                self.compile_if(cond, then, else_, vars, function)
+                self.compile_if(cond, then, else_, vars, function, fns)
             }
             Expr::While { cond, body } => {
-                self.compile_while(cond, body, vars, function)
+                self.compile_while(cond, body, vars, function, fns)
+            }
+            Expr::Call { name, args } => {
+                let callee = fns.get(name.as_str())
+                    .ok_or_else(|| format!("undefined function: {name}"))?;
+                let compiled_args: Vec<_> = args.iter()
+                    .map(|a| self.compile_expr(a, vars, function, fns).map(|v| v.into()))
+                    .collect::<Result<_, _>>()?;
+                let call = self.builder
+                    .build_call(*callee, &compiled_args, "call")
+                    .unwrap();
+                Ok(call.try_as_basic_value().unwrap_basic().into_float_value())
             }
         }
     }
@@ -143,11 +191,9 @@ impl<'ctx> CodeGen<'ctx> {
     //   %cond = fcmp o<op> %l, %r
     //   br i1 %cond, label %then, label %else
     // then:
-    //   %then_val = <then expr>
-    //   br label %merge
+    //   %then_val = <then expr>; br label %merge
     // else:
-    //   %else_val = <else expr>
-    //   br label %merge
+    //   %else_val = <else expr>; br label %merge
     // merge:
     //   %result = phi double [ %then_val, %then ], [ %else_val, %else ]
     fn compile_if(
@@ -157,9 +203,10 @@ impl<'ctx> CodeGen<'ctx> {
         else_: &Expr,
         vars: &mut HashMap<String, PointerValue<'ctx>>,
         function: FunctionValue<'ctx>,
+        fns: &HashMap<String, FunctionValue<'ctx>>,
     ) -> Result<FloatValue<'ctx>, String> {
-        let l = self.compile_expr(&cond.left, vars, function)?;
-        let r = self.compile_expr(&cond.right, vars, function)?;
+        let l = self.compile_expr(&cond.left, vars, function, fns)?;
+        let r = self.compile_expr(&cond.right, vars, function, fns)?;
         let cond_val = self.builder
             .build_float_compare(float_predicate(&cond.op), l, r, "cond")
             .unwrap();
@@ -171,12 +218,12 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.build_conditional_branch(cond_val, then_block, else_block).unwrap();
 
         self.builder.position_at_end(then_block);
-        let then_val = self.compile_expr(then, vars, function)?;
+        let then_val = self.compile_expr(then, vars, function, fns)?;
         self.builder.build_unconditional_branch(merge_block).unwrap();
         let then_exit = self.builder.get_insert_block().unwrap();
 
         self.builder.position_at_end(else_block);
-        let else_val = self.compile_expr(else_, vars, function)?;
+        let else_val = self.compile_expr(else_, vars, function, fns)?;
         self.builder.build_unconditional_branch(merge_block).unwrap();
         let else_exit = self.builder.get_insert_block().unwrap();
 
@@ -189,28 +236,25 @@ impl<'ctx> CodeGen<'ctx> {
 
     // While loop using an alloca for the result (0.0 if body never ran):
     //
-    //   %result_ptr = alloca double
-    //   store double 0.0, ptr %result_ptr
-    //   br label %loop_header
+    //   %result_ptr = alloca double; store 0.0; br label %loop_header
     // loop_header:
-    //   %cond = fcmp o<op> %l, %r
-    //   br i1 %cond, label %loop_body, label %loop_exit
+    //   %cond = fcmp ...; br i1 %cond, %loop_body, %loop_exit
     // loop_body:
     //   <block — rebinds via existing allocas for mutation>
-    //   store double %body_val, ptr %result_ptr
-    //   br label %loop_header
+    //   store double %body_val, ptr %result_ptr; br label %loop_header
     // loop_exit:
     //   %result = load double, ptr %result_ptr
     //
-    // Because variable state lives in allocas (not SSA registers), mutation
-    // across iterations is just store/load on the same alloca — no phi nodes
-    // needed for loop variables. mem2reg cleans this up when -O is used.
+    // Variable state lives in allocas, so mutation across iterations is
+    // just store/load on the same alloca — no phi nodes needed for loop
+    // variables. mem2reg promotes these when -O is used.
     fn compile_while(
         &self,
         cond: &Cond,
         body: &Block,
         vars: &mut HashMap<String, PointerValue<'ctx>>,
         function: FunctionValue<'ctx>,
+        fns: &HashMap<String, FunctionValue<'ctx>>,
     ) -> Result<FloatValue<'ctx>, String> {
         let f64_type = self.context.f64_type();
 
@@ -223,22 +267,19 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.build_unconditional_branch(loop_header).unwrap();
 
-        // Evaluate condition and branch.
         self.builder.position_at_end(loop_header);
-        let l = self.compile_expr(&cond.left, vars, function)?;
-        let r = self.compile_expr(&cond.right, vars, function)?;
+        let l = self.compile_expr(&cond.left, vars, function, fns)?;
+        let r = self.compile_expr(&cond.right, vars, function, fns)?;
         let cond_val = self.builder
             .build_float_compare(float_predicate(&cond.op), l, r, "while_cond")
             .unwrap();
         self.builder.build_conditional_branch(cond_val, loop_body, loop_exit).unwrap();
 
-        // Compile body; store its result; branch back.
         self.builder.position_at_end(loop_body);
-        let body_val = self.compile_block(body, vars, function)?;
+        let body_val = self.compile_block(body, vars, function, fns)?;
         self.builder.build_store(result_ptr, body_val).unwrap();
         self.builder.build_unconditional_branch(loop_header).unwrap();
 
-        // Load and return the last body value.
         self.builder.position_at_end(loop_exit);
         Ok(self.builder
             .build_load(f64_type, result_ptr, "while_result")

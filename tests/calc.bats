@@ -379,3 +379,57 @@ setup_file() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"br i1"* ]]
 }
+
+@test "function definition and call" {
+    run "$BIN" "fn double(x) = x * 2; double(21)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"42"* ]]
+}
+
+@test "function with two arguments" {
+    run "$BIN" "fn add(a, b) = a + b; add(3, 4)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"7"* ]]
+}
+
+@test "function using if expression" {
+    run "$BIN" "fn abs(x) = if x < 0 then -x else x; abs(-7)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"7"* ]]
+}
+
+@test "function called with expression argument" {
+    run "$BIN" "fn square(x) = x * x; square(3 + 4)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"49"* ]]
+}
+
+@test "recursive fibonacci fib(10)" {
+    run "$BIN" "fn fib(n) = if n < 2 then n else fib(n-1) + fib(n-2); fib(10)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"55"* ]]
+}
+
+@test "multiple function definitions" {
+    run "$BIN" "fn square(x) = x * x; fn hyp(a, b) = square(a) + square(b); hyp(3, 4)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"25"* ]]
+}
+
+@test "function call in variable binding" {
+    run "$BIN" "fn double(x) = x * 2; r = double(10); r + 1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"21"* ]]
+}
+
+@test "undefined function exits non-zero" {
+    run "$BIN" "nope(1)"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"undefined function"* ]]
+}
+
+@test "function ir contains define" {
+    run "$BIN" ir "fn double(x) = x * 2; double(3)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"define double @double"* ]]
+}
