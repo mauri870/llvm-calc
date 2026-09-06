@@ -13,31 +13,30 @@ The grammar is intentionally trivial so that effort goes into the compiler desig
 ## Usage
 
 ```sh
-# JIT-execute an expression and print the result
-llvm-calc "3 + 4 * (2 - 1)"
+# JIT-execute an expression
+llvm-calc "a=3; b=4; a*a + b*b"
 
-# Print LLVM IR only, no execution
-llvm-calc ir "3 + 4 * (2 - 1)"
+# Print LLVM IR
+llvm-calc ir "a=3; b=4; a*a + b*b"
 
-# Run the optimizer before printing IR
-llvm-calc ir -O "3 + 4 * (2 - 1)"
-
-# Run with optimization before JIT execution
-llvm-calc -O "3 + 4 * (2 - 1)"
+# Interactive REPL
+llvm-calc
 ```
 
+The `-O` flag enables additional optimization passes.
+
 Supported operators are `+` `-` `*` `/` with standard precedence and parentheses.
-Variable bindings use the form `x=42;y=2;x-y`.
-All values are `f64` for simplicity.
+Variable bindings use the form `name=expr;` before the final expression.
+All values are `f64`.
 
 ## Compose with LLVM tools
 
-Because the `ir` subcommand emits standard LLVM IR source code, it composes the LLVM ecosystem:
+Because the `ir` subcommand emits standard LLVM IR, it composes with the LLVM ecosystem.
 
-For example, AOT via llc+clang:
+For example, AOT compilation via llc + clang:
 
 ```sh
-llvm-calc ir "3 + 4 * (2 - 1)" -o out.ll
+llvm-calc ir "a=3; b=4; a*a + b*b" -o out.ll
 opt -O2 -S out.ll -o optimized.ll
 llc --relocation-model=pic out.ll -o out.s
 clang out.s -o calc && ./calc
