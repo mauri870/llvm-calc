@@ -337,3 +337,45 @@ setup_file() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"phi double"* ]]
 }
+
+@test "while loop body never runs when condition is false" {
+    run "$BIN" "while 0 < 0 do (1)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"0"* ]]
+}
+
+@test "while loop runs once" {
+    run "$BIN" "i=1; while i <= 1 do (i = i + 1; i)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"2"* ]]
+}
+
+@test "while loop sum 1 to 5" {
+    run "$BIN" "i=1; s=0; while i <= 5 do (s = s + i; i = i + 1; s)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"15"* ]]
+}
+
+@test "while loop mutation visible after loop" {
+    run "$BIN" "i=1; s=0; dummy = while i <= 5 do (s = s + i; i = i + 1; s); s"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"15"* ]]
+}
+
+@test "while loop iterative fibonacci fib(10)" {
+    run "$BIN" "a=0; b=1; i=2; while i <= 10 do (tmp=a+b; a=b; b=tmp; i=i+1; b)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"55"* ]]
+}
+
+@test "while loop ir contains loop_header block" {
+    run "$BIN" ir "i=1; while i <= 3 do (i = i + 1; i)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"loop_header"* ]]
+}
+
+@test "while loop ir contains conditional branch" {
+    run "$BIN" ir "i=1; while i <= 3 do (i = i + 1; i)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"br i1"* ]]
+}

@@ -14,9 +14,13 @@ gt = { ">" }
 cmpop = _{ le | ge | eq | ne | lt | gt }
 cond  =  { expr ~ cmpop ~ expr }
 
-if_expr = { "if" ~ cond ~ "then" ~ expr ~ "else" ~ expr }
+if_expr    = { "if" ~ cond ~ "then" ~ expr ~ "else" ~ expr }
 
-primary = _{ number | if_expr | "(" ~ expr ~ ")" | neg | ident }
+// A block is zero or more assignments followed by a result expression
+block      = { (assign ~ ";")* ~ expr }
+while_expr = { "while" ~ cond ~ "do" ~ "(" ~ block ~ ")" }
+
+primary = _{ number | if_expr | while_expr | "(" ~ expr ~ ")" | neg | ident }
 
 add = { "+" }
 sub = { "-" }
