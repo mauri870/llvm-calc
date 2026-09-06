@@ -13,6 +13,7 @@ struct Args {
     #[command(subcommand)]
     command: Option<Command>,
     /// Expression to JIT-execute (default when no subcommand given)
+    #[arg(allow_hyphen_values = true)]
     expr: Option<String>,
     #[arg(short = 'O', long, help = "run optimization passes")]
     optimize: bool,
@@ -22,6 +23,7 @@ struct Args {
 enum Command {
     /// Print LLVM IR and exit
     Ir {
+        #[arg(allow_hyphen_values = true)]
         expr: String,
         #[arg(short = 'O', long, help = "run optimization passes first")]
         optimize: bool,
@@ -38,7 +40,7 @@ fn main() {
             let ast = parse(&expr);
             let context = Context::create();
             let cg = codegen::CodeGen::new(&context);
-            cg.compile(&ast);
+            cg.compile(&ast).unwrap_or_else(|e| die(&e));
             if optimize {
                 cg.optimize();
             }
@@ -52,7 +54,7 @@ fn main() {
                 let ast = parse(&expr);
                 let context = Context::create();
                 let cg = codegen::CodeGen::new(&context);
-                cg.compile(&ast);
+                cg.compile(&ast).unwrap_or_else(|e| die(&e));
                 if args.optimize {
                     cg.optimize();
                 }
@@ -92,8 +94,10 @@ fn repl() {
         match parser::parse(input) {
             Ok(ast) => {
                 let cg = codegen::CodeGen::new(&context);
-                cg.compile(&ast);
-                cg.jit_run();
+                match cg.compile(&ast) {
+                    Ok(()) => cg.jit_run(),
+                    Err(e) => eprintln!("error: {e}"),
+                }
             }
             Err(e) => eprintln!("parse error: {e}"),
         }
@@ -101,8 +105,10 @@ fn repl() {
 }
 
 fn parse(input: &str) -> ast::Program {
-    parser::parse(input).unwrap_or_else(|e| {
-        eprintln!("parse error: {e}");
-        std::process::exit(1);
-    })
+    parser::parse(input).unwrap_or_else(|e| die(&format!("parse error: {e}")))
+}
+
+fn die(msg: &str) -> ! {
+    eprintln!("{msg}");
+    std::process::exit(1);
 }

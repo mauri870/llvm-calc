@@ -2,7 +2,8 @@ WHITESPACE = _{ " " | "\t" }
 
 ident   = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 number  = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-primary = _{ number | ident | "(" ~ expr ~ ")" }
+neg     =  { "-" ~ primary }
+primary = _{ number | ident | "(" ~ expr ~ ")" | neg }
 
 add = { "+" }
 sub = { "-" }

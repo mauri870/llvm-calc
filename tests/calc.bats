@@ -177,6 +177,43 @@ setup_file() {
     [[ "$output" == *"undefined variable"* ]]
 }
 
+@test "negative literal" {
+    run "$BIN" "-5"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"-5"* ]]
+}
+
+@test "negate expression" {
+    run "$BIN" "-(3 + 4)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"-7"* ]]
+}
+
+@test "negate variable" {
+    run "$BIN" "x=10; -x"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"-10"* ]]
+}
+
+@test "double negation" {
+    run "$BIN" "-(-3)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"3"* ]]
+}
+
+@test "negation in expression" {
+    run "$BIN" "10 + -3"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"7"* ]]
+}
+
+@test "repl recovers from undefined variable" {
+    run bash -c "printf 'x + 1\n3 + 4\n' | $BIN"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"undefined variable"* ]]
+    [[ "$output" == *"7"* ]]
+}
+
 @test "repl evaluates multiple expressions" {
     run bash -c "printf '3 + 4\n2 * 5\n' | $BIN"
     [ "$status" -eq 0 ]

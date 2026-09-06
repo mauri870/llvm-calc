@@ -36,7 +36,7 @@ impl<'ctx> CodeGen<'ctx> {
     //     call printf(fmt, %result)
     //     ret i32 0
     //   }
-    pub fn compile(&self, program: &Program) {
+    pub fn compile(&self, program: &Program) -> Result<(), String> {
         let i32_type = self.context.i32_type();
         let f64_type = self.context.f64_type();
         let ptr_type = self.context.ptr_type(AddressSpace::default());
@@ -56,13 +56,13 @@ impl<'ctx> CodeGen<'ctx> {
 
         let mut vars: HashMap<String, PointerValue<'ctx>> = HashMap::new();
         for (name, expr) in &program.bindings {
-            let val = self.compile_expr(expr, &vars);
+            let val = self.compile_expr(expr, &vars)?;
             let ptr = self.builder.build_alloca(f64_type, name).unwrap();
             self.builder.build_store(ptr, val).unwrap();
             vars.insert(name.clone(), ptr);
         }
 
-        let result = self.compile_expr(&program.body, &vars);
+        let result = self.compile_expr(&program.body, &vars)?;
 
         self.builder
             .build_call(printf, &[fmt_global.as_pointer_value().into(), result.into()], "")
@@ -71,30 +71,34 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder
             .build_return(Some(&i32_type.const_int(0, false)))
             .unwrap();
+
+        Ok(())
     }
 
-    fn compile_expr(&self, expr: &Expr, vars: &HashMap<String, PointerValue<'ctx>>) -> FloatValue<'ctx> {
+    fn compile_expr(&self, expr: &Expr, vars: &HashMap<String, PointerValue<'ctx>>) -> Result<FloatValue<'ctx>, String> {
         match expr {
-            Expr::Number(n) => self.context.f64_type().const_float(*n),
+            Expr::Number(n) => Ok(self.context.f64_type().const_float(*n)),
             Expr::Var(name) => {
-                let ptr = vars.get(name).unwrap_or_else(|| {
-                    eprintln!("undefined variable: {name}");
-                    std::process::exit(1);
-                });
-                self.builder
+                let ptr = vars.get(name)
+                    .ok_or_else(|| format!("undefined variable: {name}"))?;
+                Ok(self.builder
                     .build_load(self.context.f64_type(), *ptr, name)
                     .unwrap()
-                    .into_float_value()
+                    .into_float_value())
+            }
+            Expr::Neg(inner) => {
+                let val = self.compile_expr(inner, vars)?;
+                Ok(self.builder.build_float_neg(val, "neg").unwrap())
             }
             Expr::BinOp { op, left, right } => {
-                let l = self.compile_expr(left, vars);
-                let r = self.compile_expr(right, vars);
-                match op {
+                let l = self.compile_expr(left, vars)?;
+                let r = self.compile_expr(right, vars)?;
+                Ok(match op {
                     BinOp::Add => self.builder.build_float_add(l, r, "add").unwrap(),
                     BinOp::Sub => self.builder.build_float_sub(l, r, "sub").unwrap(),
                     BinOp::Mul => self.builder.build_float_mul(l, r, "mul").unwrap(),
                     BinOp::Div => self.builder.build_float_div(l, r, "div").unwrap(),
-                }
+                })
             }
         }
     }

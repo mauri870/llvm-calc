@@ -44,6 +44,7 @@ fn build_expr(pairs: Pairs<Rule>) -> Expr {
         .map_primary(|primary| match primary.as_rule() {
             Rule::number => Expr::Number(primary.as_str().parse().unwrap()),
             Rule::ident => Expr::Var(primary.as_str().to_string()),
+            Rule::neg => Expr::Neg(Box::new(build_expr(primary.into_inner()))),
             Rule::expr => build_expr(primary.into_inner()),
             rule => unreachable!("unexpected primary rule: {rule:?}"),
         })

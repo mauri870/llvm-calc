@@ -10,6 +10,7 @@ pub enum BinOp {
 pub enum Expr {
     Number(f64),
     Var(String),
+    Neg(Box<Expr>),
     BinOp { op: BinOp, left: Box<Expr>, right: Box<Expr> },
 }
 
