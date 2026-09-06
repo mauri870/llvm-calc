@@ -7,7 +7,7 @@ The grammar is intentionally trivial so that effort goes into the compiler desig
 ## Pipeline
 
 ```
-"3+4*2": parser -> AST -> codegen -> LLVM IR
+"x=42;3+4*x": parser -> AST -> codegen -> LLVM IR
 ```
 
 ## Usage
@@ -27,6 +27,7 @@ llvm-calc -O "3 + 4 * (2 - 1)"
 ```
 
 Supported operators are `+` `-` `*` `/` with standard precedence and parentheses.
+Variable bindings use the form `x=42;y=2;x-y`.
 All values are `f64` for simplicity.
 
 ## Compose with LLVM tools
