@@ -100,7 +100,7 @@ fn repl() {
     }
 }
 
-fn parse(input: &str) -> ast::Expr {
+fn parse(input: &str) -> ast::Program {
     parser::parse(input).unwrap_or_else(|e| {
         eprintln!("parse error: {e}");
         std::process::exit(1);

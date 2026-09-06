@@ -3,17 +3,36 @@ use pest::iterators::Pairs;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest_derive::Parser;
 
-use crate::ast::{BinOp, Expr};
+use crate::ast::{BinOp, Expr, Program};
 
 #[derive(Parser)]
 #[grammar = "src/calc.pest"]
 struct CalcParser;
 
-pub fn parse(input: &str) -> Result<Expr, String> {
-    let mut pairs = CalcParser::parse(Rule::calculation, input)
+pub fn parse(input: &str) -> Result<Program, String> {
+    let pairs = CalcParser::parse(Rule::program, input)
         .map_err(|e| e.to_string())?;
-    let expr_pair = pairs.next().unwrap();
-    Ok(build_expr(expr_pair.into_inner()))
+
+    let mut bindings = Vec::new();
+    let mut body = None;
+
+    for pair in pairs {
+        match pair.as_rule() {
+            Rule::assign => {
+                let mut inner = pair.into_inner();
+                let name = inner.next().unwrap().as_str().to_string();
+                let expr_pair = inner.next().unwrap();
+                bindings.push((name, build_expr(expr_pair.into_inner())));
+            }
+            Rule::expr => {
+                body = Some(build_expr(pair.into_inner()));
+            }
+            Rule::EOI => {}
+            rule => unreachable!("unexpected top-level rule: {rule:?}"),
+        }
+    }
+
+    Ok(Program { bindings, body: body.unwrap() })
 }
 
 fn build_expr(pairs: Pairs<Rule>) -> Expr {
@@ -24,7 +43,7 @@ fn build_expr(pairs: Pairs<Rule>) -> Expr {
     pratt
         .map_primary(|primary| match primary.as_rule() {
             Rule::number => Expr::Number(primary.as_str().parse().unwrap()),
-            // if parenthesised expr, recurse into inner expr pairs
+            Rule::ident => Expr::Var(primary.as_str().to_string()),
             Rule::expr => build_expr(primary.into_inner()),
             rule => unreachable!("unexpected primary rule: {rule:?}"),
         })

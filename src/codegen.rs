@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use inkwell::AddressSpace;
 use inkwell::OptimizationLevel;
 use inkwell::builder::Builder;
@@ -5,9 +7,9 @@ use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
-use inkwell::values::FloatValue;
+use inkwell::values::{FloatValue, PointerValue};
 
-use crate::ast::{BinOp, Expr};
+use crate::ast::{BinOp, Expr, Program};
 
 pub struct CodeGen<'ctx> {
     context: &'ctx Context,
@@ -24,12 +26,19 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    // Emit a full mini LLVM IR program:
+    // Emit:
     //   @fmt = private constant [N x i8] c"%g\n\00"
     //   declare i32 @printf(ptr, ...)
-    //   define i32 @main() { ...; call printf(fmt, <expr>); ret i32 0 }
-    pub fn compile(&self, expr: &Expr) {
+    //   define i32 @main() {
+    //     %x = alloca double; store <val>, %x   <- one per binding
+    //     ...
+    //     %result = load / compute body
+    //     call printf(fmt, %result)
+    //     ret i32 0
+    //   }
+    pub fn compile(&self, program: &Program) {
         let i32_type = self.context.i32_type();
+        let f64_type = self.context.f64_type();
         let ptr_type = self.context.ptr_type(AddressSpace::default());
 
         let printf_type = i32_type.fn_type(&[ptr_type.into()], true);
@@ -45,7 +54,15 @@ impl<'ctx> CodeGen<'ctx> {
         let entry = self.context.append_basic_block(main_fn, "entry");
         self.builder.position_at_end(entry);
 
-        let result = self.compile_expr(expr);
+        let mut vars: HashMap<String, PointerValue<'ctx>> = HashMap::new();
+        for (name, expr) in &program.bindings {
+            let val = self.compile_expr(expr, &vars);
+            let ptr = self.builder.build_alloca(f64_type, name).unwrap();
+            self.builder.build_store(ptr, val).unwrap();
+            vars.insert(name.clone(), ptr);
+        }
+
+        let result = self.compile_expr(&program.body, &vars);
 
         self.builder
             .build_call(printf, &[fmt_global.as_pointer_value().into(), result.into()], "")
@@ -56,12 +73,22 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap();
     }
 
-    fn compile_expr(&self, expr: &Expr) -> FloatValue<'ctx> {
+    fn compile_expr(&self, expr: &Expr, vars: &HashMap<String, PointerValue<'ctx>>) -> FloatValue<'ctx> {
         match expr {
             Expr::Number(n) => self.context.f64_type().const_float(*n),
+            Expr::Var(name) => {
+                let ptr = vars.get(name).unwrap_or_else(|| {
+                    eprintln!("undefined variable: {name}");
+                    std::process::exit(1);
+                });
+                self.builder
+                    .build_load(self.context.f64_type(), *ptr, name)
+                    .unwrap()
+                    .into_float_value()
+            }
             Expr::BinOp { op, left, right } => {
-                let l = self.compile_expr(left);
-                let r = self.compile_expr(right);
+                let l = self.compile_expr(left, vars);
+                let r = self.compile_expr(right, vars);
                 match op {
                     BinOp::Add => self.builder.build_float_add(l, r, "add").unwrap(),
                     BinOp::Sub => self.builder.build_float_sub(l, r, "sub").unwrap(),
@@ -86,8 +113,9 @@ impl<'ctx> CodeGen<'ctx> {
                 CodeModel::Default,
             )
             .unwrap();
+        // mem2reg promotes alloca/store/load to SSA registers before the rest run
         self.module
-            .run_passes("instcombine,reassociate,gvn,simplifycfg", &machine, PassBuilderOptions::create())
+            .run_passes("mem2reg,instcombine,reassociate,gvn,simplifycfg", &machine, PassBuilderOptions::create())
             .unwrap();
     }
 

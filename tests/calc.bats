@@ -135,6 +135,48 @@ setup_file() {
     [[ "$output" == *"parse error"* ]]
 }
 
+@test "single variable" {
+    run "$BIN" "x=42; x"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"42"* ]]
+}
+
+@test "variable used in expression" {
+    run "$BIN" "x=10; x * 3"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"30"* ]]
+}
+
+@test "multiple variables" {
+    run "$BIN" "x=10; y=20; x*y"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"200"* ]]
+}
+
+@test "variable in sub-expression" {
+    run "$BIN" "a=3; b=4; a*a + b*b"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"25"* ]]
+}
+
+@test "ir shows alloca without -O" {
+    run "$BIN" ir "x=5; x"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"alloca double"* ]]
+}
+
+@test "ir -O folds variables away" {
+    run "$BIN" ir -O "x=5; x"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"alloca"* ]]
+}
+
+@test "undefined variable exits non-zero" {
+    run "$BIN" "x + 1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"undefined variable"* ]]
+}
+
 @test "repl evaluates multiple expressions" {
     run bash -c "printf '3 + 4\n2 * 5\n' | $BIN"
     [ "$status" -eq 0 ]

@@ -1,12 +1,14 @@
 WHITESPACE = _{ " " | "\t" }
 
+ident   = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 number  = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-primary = _{ number | "(" ~ expr ~ ")" }
+primary = _{ number | ident | "(" ~ expr ~ ")" }
 
 add = { "+" }
 sub = { "-" }
 mul = { "*" }
 div = { "/" }
 
-expr        =  { primary ~ ((add | sub | mul | div) ~ primary)* }
-calculation = _{ SOI ~ expr ~ EOI }
+expr    =  { primary ~ ((add | sub | mul | div) ~ primary)* }
+assign  =  { ident ~ "=" ~ expr }
+program = _{ SOI ~ (assign ~ ";")* ~ expr ~ EOI }
