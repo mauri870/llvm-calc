@@ -23,7 +23,7 @@ llvm-calc ir "a=3; b=4; a*a + b*b"
 llvm-calc
 ```
 
-The `-O` flag enables additional optimization passes.
+The `-O` flag accepts optimization levels like a C compiler: `-O0` (none), `-O1`, `-O2`, `-O3`.
 
 Supported operators are `+` `-` `*` `/` with standard precedence and parentheses.
 
@@ -99,29 +99,29 @@ entry:
 }
 ```
 
-With `-O`, `mem2reg` promotes the parameter alloca to a direct SSA value:
+With `-O3`, the full pipeline promotes allocas to SSA, eliminates redundant instructions, and converts calls to `tail call`:
 
 ```sh
-$ llvm-calc ir -O "fn fib(n) = if n < 2 then n else fib(n-1) + fib(n-2); fib(10)"
+$ llvm-calc ir -O3 "fn fib(n) = if n < 2 then n else fib(n-1) + fib(n-2); fib(10)"
 ```
 
 ```llvm
-define double @fib(double %0) {
+define double @fib(double %0) local_unnamed_addr {
 entry:
   %cond = fcmp olt double %0, 2.000000e+00
-  br i1 %cond, label %merge, label %else
+  br i1 %cond, label %common.ret7, label %else
+
+common.ret7:
+  %common.ret7.op = phi double [ %add, %else ], [ %0, %entry ]
+  ret double %common.ret7.op
 
 else:
   %sub = fadd double %0, -1.000000e+00
-  %call = call double @fib(double %sub)
+  %call = tail call double @fib(double %sub)
   %sub5 = fadd double %0, -2.000000e+00
-  %call6 = call double @fib(double %sub5)
+  %call6 = tail call double @fib(double %sub5)
   %add = fadd double %call, %call6
-  br label %merge
-
-merge:
-  %result = phi double [ %add, %else ], [ %0, %entry ]
-  ret double %result
+  br label %common.ret7
 }
 ```
 

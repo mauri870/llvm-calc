@@ -15,8 +15,13 @@ struct Args {
     /// Expression to JIT-execute (default when no subcommand given)
     #[arg(allow_hyphen_values = true)]
     expr: Option<String>,
-    #[arg(short = 'O', long, help = "run optimization passes")]
-    optimize: bool,
+    #[arg(
+        short = 'O',
+        value_name = "LEVEL",
+        value_parser = clap::value_parser!(u8).range(0..=3),
+        help = "optimization level: -O0, -O1, -O2, -O3",
+    )]
+    optimize: Option<u8>,
 }
 
 #[derive(Subcommand)]
@@ -25,15 +30,35 @@ enum Command {
     Ir {
         #[arg(allow_hyphen_values = true)]
         expr: String,
-        #[arg(short = 'O', long, help = "run optimization passes first")]
-        optimize: bool,
+        #[arg(
+            short = 'O',
+            value_name = "LEVEL",
+            value_parser = clap::value_parser!(u8).range(0..=3),
+            help = "optimization level: -O0, -O1, -O2, -O3",
+        )]
+        optimize: Option<u8>,
         #[arg(short = 'o', long, value_name = "FILE", help = "write IR to file instead of stdout")]
         output: Option<PathBuf>,
     },
 }
 
+// Split -O<n> into two tokens before clap sees them.
+// allow_hyphen_values on the positional expr would otherwise consume -O2 as
+// the expression value rather than recognizing it as the -O flag.
+fn preprocess_args(raw: impl Iterator<Item = String>) -> Vec<String> {
+    raw.flat_map(|arg| {
+        if let Some(suffix) = arg.strip_prefix("-O") {
+            if suffix.len() == 1 && suffix.as_bytes()[0].is_ascii_digit() {
+                return vec!["-O".to_string(), suffix.to_string()];
+            }
+        }
+        vec![arg]
+    })
+    .collect()
+}
+
 fn main() {
-    let args = Args::parse();
+    let args = Args::parse_from(preprocess_args(std::env::args()));
 
     match args.command {
         Some(Command::Ir { expr, optimize, output }) => {
@@ -41,8 +66,8 @@ fn main() {
             let context = Context::create();
             let cg = codegen::CodeGen::new(&context);
             cg.compile(&ast).unwrap_or_else(|e| die(&e));
-            if optimize {
-                cg.optimize();
+            if let Some(level) = optimize {
+                cg.optimize(level);
             }
             match output {
                 Some(path) => cg.write_ir(&path),
@@ -55,8 +80,8 @@ fn main() {
                 let context = Context::create();
                 let cg = codegen::CodeGen::new(&context);
                 cg.compile(&ast).unwrap_or_else(|e| die(&e));
-                if args.optimize {
-                    cg.optimize();
+                if let Some(level) = args.optimize {
+                    cg.optimize(level);
                 }
                 cg.jit_run();
             }

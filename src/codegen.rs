@@ -287,7 +287,13 @@ impl<'ctx> CodeGen<'ctx> {
             .into_float_value())
     }
 
-    pub fn optimize(&self) {
+    pub fn optimize(&self, level: u8) {
+        let (opt_level, pipeline) = match level {
+            1 => (OptimizationLevel::Less,       "default<O1>"),
+            2 => (OptimizationLevel::Default,    "default<O2>"),
+            3 => (OptimizationLevel::Aggressive, "default<O3>"),
+            _ => return,
+        };
         Target::initialize_native(&InitializationConfig::default()).unwrap();
         let triple = TargetMachine::get_default_triple();
         let target = Target::from_triple(&triple).unwrap();
@@ -296,14 +302,13 @@ impl<'ctx> CodeGen<'ctx> {
                 &triple,
                 "generic",
                 "",
-                OptimizationLevel::Default,
+                opt_level,
                 RelocMode::Default,
                 CodeModel::Default,
             )
             .unwrap();
-        // mem2reg promotes alloca/store/load to SSA registers before the rest run
         self.module
-            .run_passes("mem2reg,instcombine,reassociate,gvn,simplifycfg", &machine, PassBuilderOptions::create())
+            .run_passes(pipeline, &machine, PassBuilderOptions::create())
             .unwrap();
     }
 

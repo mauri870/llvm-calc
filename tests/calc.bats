@@ -97,8 +97,8 @@ setup_file() {
     [[ "$output" != *"define i32 @main()"* ]]
 }
 
-@test "-O flag produces optimized IR" {
-    run "$BIN" -O "1 + 1"
+@test "-O2 flag produces optimized IR" {
+    run "$BIN" -O2 "1 + 1"
     [ "$status" -eq 0 ]
     [[ "$output" == *"2"* ]]
 }
@@ -107,9 +107,15 @@ setup_file() {
     run "$BIN" "a=3; b=4; a*a + b*b"
     [ "$status" -eq 0 ]
     local unopt="$output"
-    run "$BIN" -O "a=3; b=4; a*a + b*b"
+    run "$BIN" -O2 "a=3; b=4; a*a + b*b"
     [ "$status" -eq 0 ]
     [ "$output" = "$unopt" ]
+}
+
+@test "ir -O3 promotes recursive calls to tail calls" {
+    run "$BIN" ir -O3 "fn fib(n) = if n < 2 then n else fib(n-1) + fib(n-2); fib(10)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"tail call double @fib"* ]]
 }
 
 @test "ir subcommand prints IR and exits without running" {
@@ -118,10 +124,10 @@ setup_file() {
     [[ "$output" == *"define i32 @main()"* ]]
 }
 
-@test "ir subcommand respects -O" {
-    run "$BIN" ir -O "3 + 4"
+@test "ir subcommand respects -O2" {
+    run "$BIN" ir -O2 "3 + 4"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"define i32 @main()"* ]]
+    [[ "$output" == *"@main()"* ]]
 }
 
 @test "ir -o writes IR to file" {
@@ -198,8 +204,8 @@ setup_file() {
     [[ "$output" == *"alloca double"* ]]
 }
 
-@test "ir -O folds variables away" {
-    run "$BIN" ir -O "x=5; x"
+@test "ir -O2 folds variables away" {
+    run "$BIN" ir -O2 "x=5; x"
     [ "$status" -eq 0 ]
     [[ "$output" != *"alloca"* ]]
 }
