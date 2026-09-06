@@ -265,3 +265,75 @@ setup_file() {
     run bash -c "echo '' | $BIN"
     [ "$status" -eq 0 ]
 }
+
+@test "if true branch taken" {
+    run "$BIN" "if 1 < 2 then 42 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"42"* ]]
+}
+
+@test "if false branch taken" {
+    run "$BIN" "if 2 < 1 then 42 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"0"* ]]
+}
+
+@test "if with greater-than" {
+    run "$BIN" "if 5 > 3 then 1 else 2"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1"* ]]
+}
+
+@test "if with equality" {
+    run "$BIN" "if 3 == 3 then 9 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"9"* ]]
+}
+
+@test "if with not-equal" {
+    run "$BIN" "if 3 != 4 then 5 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"5"* ]]
+}
+
+@test "if with less-or-equal" {
+    run "$BIN" "if 3 <= 3 then 1 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1"* ]]
+}
+
+@test "if with greater-or-equal" {
+    run "$BIN" "if 4 >= 5 then 1 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"0"* ]]
+}
+
+@test "if with variable in condition" {
+    run "$BIN" "n=5; if n < 10 then n else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"5"* ]]
+}
+
+@test "if with expressions in branches" {
+    run "$BIN" "a=3; b=4; if a < b then a*a else b*b"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"9"* ]]
+}
+
+@test "nested if" {
+    run "$BIN" "x=5; if x < 3 then 1 else if x < 7 then 2 else 3"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"2"* ]]
+}
+
+@test "if ir contains conditional branch" {
+    run "$BIN" ir "if 1 < 2 then 42 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"br i1"* ]]
+}
+
+@test "if ir contains phi node" {
+    run "$BIN" ir "if 1 < 2 then 42 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"phi double"* ]]
+}

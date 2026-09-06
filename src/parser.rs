@@ -3,7 +3,7 @@ use pest::iterators::Pairs;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest_derive::Parser;
 
-use crate::ast::{BinOp, Expr, Program};
+use crate::ast::{BinOp, CmpOp, Cond, Expr, Program};
 
 #[derive(Parser)]
 #[grammar = "src/calc.pest"]
@@ -46,6 +46,7 @@ fn build_expr(pairs: Pairs<Rule>) -> Expr {
             Rule::ident => Expr::Var(primary.as_str().to_string()),
             Rule::neg => Expr::Neg(Box::new(build_expr(primary.into_inner()))),
             Rule::expr => build_expr(primary.into_inner()),
+            Rule::if_expr => build_if(primary.into_inner()),
             rule => unreachable!("unexpected primary rule: {rule:?}"),
         })
         .map_infix(|left, op, right| Expr::BinOp {
@@ -60,4 +61,42 @@ fn build_expr(pairs: Pairs<Rule>) -> Expr {
             right: Box::new(right),
         })
         .parse(pairs)
+}
+
+fn build_if(mut pairs: Pairs<Rule>) -> Expr {
+    let cond_pair = pairs.next().unwrap(); // Rule::cond
+    let then_pair = pairs.next().unwrap(); // Rule::expr
+    let else_pair = pairs.next().unwrap(); // Rule::expr
+
+    let cond = build_cond(cond_pair.into_inner());
+    let then = build_expr(then_pair.into_inner());
+    let else_ = build_expr(else_pair.into_inner());
+
+    Expr::If {
+        cond: Box::new(cond),
+        then: Box::new(then),
+        else_: Box::new(else_),
+    }
+}
+
+fn build_cond(mut pairs: Pairs<Rule>) -> Cond {
+    let left_pair = pairs.next().unwrap();  // Rule::expr
+    let op_pair = pairs.next().unwrap();    // Rule::lt | gt | eq | ne | le | ge
+    let right_pair = pairs.next().unwrap(); // Rule::expr
+
+    let op = match op_pair.as_rule() {
+        Rule::lt => CmpOp::Lt,
+        Rule::gt => CmpOp::Gt,
+        Rule::eq => CmpOp::Eq,
+        Rule::ne => CmpOp::Ne,
+        Rule::le => CmpOp::Le,
+        Rule::ge => CmpOp::Ge,
+        rule => unreachable!("unexpected cmpop rule: {rule:?}"),
+    };
+
+    Cond {
+        op,
+        left: Box::new(build_expr(left_pair.into_inner())),
+        right: Box::new(build_expr(right_pair.into_inner())),
+    }
 }

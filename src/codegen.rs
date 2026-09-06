@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 
 use inkwell::AddressSpace;
+use inkwell::FloatPredicate;
 use inkwell::OptimizationLevel;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
-use inkwell::values::{FloatValue, PointerValue};
+use inkwell::values::{FloatValue, FunctionValue, PointerValue};
 
-use crate::ast::{BinOp, Expr, Program};
+use crate::ast::{BinOp, CmpOp, Cond, Expr, Program};
 
 pub struct CodeGen<'ctx> {
     context: &'ctx Context,
@@ -56,13 +57,13 @@ impl<'ctx> CodeGen<'ctx> {
 
         let mut vars: HashMap<String, PointerValue<'ctx>> = HashMap::new();
         for (name, expr) in &program.bindings {
-            let val = self.compile_expr(expr, &vars)?;
+            let val = self.compile_expr(expr, &vars, main_fn)?;
             let ptr = self.builder.build_alloca(f64_type, name).unwrap();
             self.builder.build_store(ptr, val).unwrap();
             vars.insert(name.clone(), ptr);
         }
 
-        let result = self.compile_expr(&program.body, &vars)?;
+        let result = self.compile_expr(&program.body, &vars, main_fn)?;
 
         self.builder
             .build_call(printf, &[fmt_global.as_pointer_value().into(), result.into()], "")
@@ -75,7 +76,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn compile_expr(&self, expr: &Expr, vars: &HashMap<String, PointerValue<'ctx>>) -> Result<FloatValue<'ctx>, String> {
+    fn compile_expr(&self, expr: &Expr, vars: &HashMap<String, PointerValue<'ctx>>, function: FunctionValue<'ctx>) -> Result<FloatValue<'ctx>, String> {
         match expr {
             Expr::Number(n) => Ok(self.context.f64_type().const_float(*n)),
             Expr::Var(name) => {
@@ -87,12 +88,12 @@ impl<'ctx> CodeGen<'ctx> {
                     .into_float_value())
             }
             Expr::Neg(inner) => {
-                let val = self.compile_expr(inner, vars)?;
+                let val = self.compile_expr(inner, vars, function)?;
                 Ok(self.builder.build_float_neg(val, "neg").unwrap())
             }
             Expr::BinOp { op, left, right } => {
-                let l = self.compile_expr(left, vars)?;
-                let r = self.compile_expr(right, vars)?;
+                let l = self.compile_expr(left, vars, function)?;
+                let r = self.compile_expr(right, vars, function)?;
                 Ok(match op {
                     BinOp::Add => self.builder.build_float_add(l, r, "add").unwrap(),
                     BinOp::Sub => self.builder.build_float_sub(l, r, "sub").unwrap(),
@@ -100,7 +101,66 @@ impl<'ctx> CodeGen<'ctx> {
                     BinOp::Div => self.builder.build_float_div(l, r, "div").unwrap(),
                 })
             }
+            Expr::If { cond, then, else_ } => {
+                self.compile_if(cond, then, else_, vars, function)
+            }
         }
+    }
+
+    // Emits the standard if-then-else pattern:
+    //
+    //   %cond = fcmp o<op> %l, %r
+    //   br i1 %cond, label %then, label %else
+    // then:
+    //   %then_val = <then expr>
+    //   br label %merge
+    // else:
+    //   %else_val = <else expr>
+    //   br label %merge
+    // merge:
+    //   %result = phi double [ %then_val, %then ], [ %else_val, %else ]
+    fn compile_if(
+        &self,
+        cond: &Cond,
+        then: &Expr,
+        else_: &Expr,
+        vars: &HashMap<String, PointerValue<'ctx>>,
+        function: FunctionValue<'ctx>,
+    ) -> Result<FloatValue<'ctx>, String> {
+        let l = self.compile_expr(&cond.left, vars, function)?;
+        let r = self.compile_expr(&cond.right, vars, function)?;
+
+        let predicate = match cond.op {
+            CmpOp::Lt => FloatPredicate::OLT,
+            CmpOp::Gt => FloatPredicate::OGT,
+            CmpOp::Eq => FloatPredicate::OEQ,
+            CmpOp::Ne => FloatPredicate::ONE,
+            CmpOp::Le => FloatPredicate::OLE,
+            CmpOp::Ge => FloatPredicate::OGE,
+        };
+        let cond_val = self.builder.build_float_compare(predicate, l, r, "cond").unwrap();
+
+        let then_block = self.context.append_basic_block(function, "then");
+        let else_block = self.context.append_basic_block(function, "else");
+        let merge_block = self.context.append_basic_block(function, "merge");
+
+        self.builder.build_conditional_branch(cond_val, then_block, else_block).unwrap();
+
+        self.builder.position_at_end(then_block);
+        let then_val = self.compile_expr(then, vars, function)?;
+        self.builder.build_unconditional_branch(merge_block).unwrap();
+        let then_block = self.builder.get_insert_block().unwrap(); // may have shifted
+
+        self.builder.position_at_end(else_block);
+        let else_val = self.compile_expr(else_, vars, function)?;
+        self.builder.build_unconditional_branch(merge_block).unwrap();
+        let else_block = self.builder.get_insert_block().unwrap(); // may have shifted
+
+        self.builder.position_at_end(merge_block);
+        let phi = self.builder.build_phi(self.context.f64_type(), "result").unwrap();
+        phi.add_incoming(&[(&then_val, then_block), (&else_val, else_block)]);
+
+        Ok(phi.as_basic_value().into_float_value())
     }
 
     pub fn optimize(&self) {

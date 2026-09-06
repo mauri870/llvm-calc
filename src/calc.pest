@@ -1,9 +1,22 @@
-WHITESPACE = _{ " " | "\t" }
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
 ident   = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 number  = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 neg     =  { "-" ~ primary }
-primary = _{ number | ident | "(" ~ expr ~ ")" | neg }
+
+// Comparison operators
+le = { "<=" }
+ge = { ">=" }
+eq = { "==" }
+ne = { "!=" }
+lt = { "<" }
+gt = { ">" }
+cmpop = _{ le | ge | eq | ne | lt | gt }
+cond  =  { expr ~ cmpop ~ expr }
+
+if_expr = { "if" ~ cond ~ "then" ~ expr ~ "else" ~ expr }
+
+primary = _{ number | if_expr | "(" ~ expr ~ ")" | neg | ident }
 
 add = { "+" }
 sub = { "-" }
