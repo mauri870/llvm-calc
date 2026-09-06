@@ -1,0 +1,12 @@
+WHITESPACE = _{ " " | "\t" }
+
+number  = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+primary = _{ number | "(" ~ expr ~ ")" }
+
+add = { "+" }
+sub = { "-" }
+mul = { "*" }
+div = { "/" }
+
+expr        =  { primary ~ ((add | sub | mul | div) ~ primary)* }
+calculation = _{ SOI ~ expr ~ EOI }

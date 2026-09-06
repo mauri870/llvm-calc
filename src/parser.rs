@@ -1,30 +1,43 @@
+use pest::Parser;
+use pest::iterators::Pairs;
+use pest::pratt_parser::{Assoc, Op, PrattParser};
+use pest_derive::Parser;
+
 use crate::ast::{BinOp, Expr};
 
+#[derive(Parser)]
+#[grammar = "src/calc.pest"]
+struct CalcParser;
+
 pub fn parse(input: &str) -> Result<Expr, String> {
-    let tokens: Vec<&str> = input.split_whitespace().collect();
-    match tokens.as_slice() {
-        [n] => parse_number(n),
-        [left, op, right] => Ok(Expr::BinOp {
-            op: parse_op(op)?,
-            left: Box::new(parse_number(left)?),
-            right: Box::new(parse_number(right)?),
-        }),
-        _ => Err(format!("expected '<num>' or '<num> <op> <num>', got: {input:?}")),
-    }
+    let mut pairs = CalcParser::parse(Rule::calculation, input)
+        .map_err(|e| e.to_string())?;
+    let expr_pair = pairs.next().unwrap();
+    Ok(build_expr(expr_pair.into_inner()))
 }
 
-fn parse_number(s: &str) -> Result<Expr, String> {
-    s.parse::<f64>()
-        .map(Expr::Number)
-        .map_err(|_| format!("not a number: {s:?}"))
-}
+fn build_expr(pairs: Pairs<Rule>) -> Expr {
+    let pratt = PrattParser::new()
+        .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
+        .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left));
 
-fn parse_op(s: &str) -> Result<BinOp, String> {
-    match s {
-        "+" => Ok(BinOp::Add),
-        "-" => Ok(BinOp::Sub),
-        "*" => Ok(BinOp::Mul),
-        "/" => Ok(BinOp::Div),
-        _ => Err(format!("unknown operator: {s:?}")),
-    }
+    pratt
+        .map_primary(|primary| match primary.as_rule() {
+            Rule::number => Expr::Number(primary.as_str().parse().unwrap()),
+            // if parenthesised expr, recurse into inner expr pairs
+            Rule::expr => build_expr(primary.into_inner()),
+            rule => unreachable!("unexpected primary rule: {rule:?}"),
+        })
+        .map_infix(|left, op, right| Expr::BinOp {
+            op: match op.as_rule() {
+                Rule::add => BinOp::Add,
+                Rule::sub => BinOp::Sub,
+                Rule::mul => BinOp::Mul,
+                Rule::div => BinOp::Div,
+                rule => unreachable!("unexpected infix rule: {rule:?}"),
+            },
+            left: Box::new(left),
+            right: Box::new(right),
+        })
+        .parse(pairs)
 }
