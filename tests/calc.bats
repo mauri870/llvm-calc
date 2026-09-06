@@ -37,6 +37,30 @@ setup_file() {
     [[ "$output" == *"5"* ]]
 }
 
+@test "float literal" {
+    run "$BIN" "3.14"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"3.14"* ]]
+}
+
+@test "float arithmetic" {
+    run "$BIN" "3.14 * 2"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"6.28"* ]]
+}
+
+@test "float addition" {
+    run "$BIN" "1.5 + 2.5"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"4"* ]]
+}
+
+@test "float variable" {
+    run "$BIN" "x=0.5; x * 6"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"3"* ]]
+}
+
 @test "mul takes precedence over add" {
     run "$BIN" "2 + 3 * 4"
     [ "$status" -eq 0 ]
