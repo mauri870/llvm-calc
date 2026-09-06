@@ -103,6 +103,15 @@ setup_file() {
     [[ "$output" == *"2"* ]]
 }
 
+@test "optimized and unoptimized JIT produce the same result" {
+    run "$BIN" "a=3; b=4; a*a + b*b"
+    [ "$status" -eq 0 ]
+    local unopt="$output"
+    run "$BIN" -O "a=3; b=4; a*a + b*b"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$unopt" ]
+}
+
 @test "ir subcommand prints IR and exits without running" {
     run "$BIN" ir "3 + 4"
     [ "$status" -eq 0 ]
