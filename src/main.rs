@@ -47,19 +47,55 @@ fn main() {
                 None => cg.print_ir(),
             }
         }
-        None => {
-            let expr = args.expr.unwrap_or_else(|| {
-                eprintln!("error: expression required");
-                std::process::exit(1);
-            });
-            let ast = parse(&expr);
-            let context = Context::create();
-            let cg = codegen::CodeGen::new(&context);
-            cg.compile(&ast);
-            if args.optimize {
-                cg.optimize();
+        None => match args.expr {
+            Some(expr) => {
+                let ast = parse(&expr);
+                let context = Context::create();
+                let cg = codegen::CodeGen::new(&context);
+                cg.compile(&ast);
+                if args.optimize {
+                    cg.optimize();
+                }
+                cg.jit_run();
             }
-            cg.jit_run();
+            None => repl(),
+        },
+    }
+}
+
+fn repl() {
+    use std::io::{self, BufRead, Write};
+
+    let context = Context::create();
+    let mut stdout = io::stdout();
+    let stdin = io::stdin();
+
+    loop {
+        print!("> ");
+        stdout.flush().unwrap();
+
+        let mut line = String::new();
+        match stdin.lock().read_line(&mut line) {
+            Ok(0) => break, // EOF
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("error: {e}");
+                break;
+            }
+        }
+
+        let input = line.trim();
+        if input.is_empty() {
+            continue;
+        }
+
+        match parser::parse(input) {
+            Ok(ast) => {
+                let cg = codegen::CodeGen::new(&context);
+                cg.compile(&ast);
+                cg.jit_run();
+            }
+            Err(e) => eprintln!("parse error: {e}"),
         }
     }
 }

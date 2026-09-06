@@ -134,3 +134,22 @@ setup_file() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"parse error"* ]]
 }
+
+@test "repl evaluates multiple expressions" {
+    run bash -c "printf '3 + 4\n2 * 5\n' | $BIN"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"7"* ]]
+    [[ "$output" == *"10"* ]]
+}
+
+@test "repl recovers from parse errors" {
+    run bash -c "printf 'bad @@\n3 + 4\n' | $BIN"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"parse error"* ]]
+    [[ "$output" == *"7"* ]]
+}
+
+@test "repl exits cleanly on EOF" {
+    run bash -c "echo '' | $BIN"
+    [ "$status" -eq 0 ]
+}
