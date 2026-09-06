@@ -95,6 +95,13 @@ impl<'ctx> CodeGen<'ctx> {
         println!("{}", self.module.print_to_string().to_string());
     }
 
+    pub fn write_ir(&self, path: &std::path::Path) {
+        self.module.print_to_file(path).unwrap_or_else(|e| {
+            eprintln!("error writing IR: {}", e.to_string());
+            std::process::exit(1);
+        });
+    }
+
     // Consumes self because create_jit_execution_engine takes ownership of the module.
     pub fn jit_run(self) {
         let ee = self.module

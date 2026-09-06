@@ -2,6 +2,8 @@ mod ast;
 mod codegen;
 mod parser;
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 use inkwell::context::Context;
 
@@ -23,6 +25,8 @@ enum Command {
         expr: String,
         #[arg(short = 'O', long, help = "run optimization passes first")]
         optimize: bool,
+        #[arg(short = 'o', long, value_name = "FILE", help = "write IR to file instead of stdout")]
+        output: Option<PathBuf>,
     },
 }
 
@@ -30,7 +34,7 @@ fn main() {
     let args = Args::parse();
 
     match args.command {
-        Some(Command::Ir { expr, optimize }) => {
+        Some(Command::Ir { expr, optimize, output }) => {
             let ast = parse(&expr);
             let context = Context::create();
             let cg = codegen::CodeGen::new(&context);
@@ -38,7 +42,10 @@ fn main() {
             if optimize {
                 cg.optimize();
             }
-            cg.print_ir();
+            match output {
+                Some(path) => cg.write_ir(&path),
+                None => cg.print_ir(),
+            }
         }
         None => {
             let expr = args.expr.unwrap_or_else(|| {

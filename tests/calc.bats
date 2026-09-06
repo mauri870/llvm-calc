@@ -91,6 +91,44 @@ setup_file() {
     [[ "$output" == *"define i32 @main()"* ]]
 }
 
+@test "ir -o writes IR to file" {
+    local out
+    out="$(mktemp --suffix=.ll)"
+    run "$BIN" ir "3 + 4" -o "$out"
+    [ "$status" -eq 0 ]
+    [ -s "$out" ]
+    grep -q "define i32 @main()" "$out"
+    rm -f "$out"
+}
+
+@test "ir output pipes into opt" {
+    if ! command -v opt &>/dev/null; then skip "opt not found"; fi
+    local ll out
+    ll="$(mktemp --suffix=.ll)"
+    out="$(mktemp --suffix=.ll)"
+    "$BIN" ir "3 + 4 * (2 - 1)" -o "$ll"
+    run opt -O2 -S "$ll" -o "$out"
+    [ "$status" -eq 0 ]
+    [ -s "$out" ]
+    rm -f "$ll" "$out"
+}
+
+@test "ir output compiles and runs via llc + clang" {
+    if ! command -v llc &>/dev/null; then skip "llc not found"; fi
+    if ! command -v clang &>/dev/null; then skip "clang not found"; fi
+    local ll asm bin
+    ll="$(mktemp --suffix=.ll)"
+    asm="$(mktemp --suffix=.s)"
+    bin="$(mktemp)"
+    "$BIN" ir "3 + 4 * (2 - 1)" -o "$ll"
+    llc --relocation-model=pic "$ll" -o "$asm"
+    clang "$asm" -o "$bin"
+    run "$bin"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"7"* ]]
+    rm -f "$ll" "$asm" "$bin"
+}
+
 @test "parse error exits non-zero" {
     run "$BIN" "bad @@"
     [ "$status" -ne 0 ]
