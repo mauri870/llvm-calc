@@ -29,6 +29,8 @@ Supported operators are `+` `-` `*` `/` with standard precedence and parentheses
 
 Variable bindings use the form `name=expr;` before the final expression.
 
+Functions use `fn f(x) = x*2;f(4)` syntax.
+
 Loops can be written with `while`. 
 
 All values are `f64`.
@@ -57,7 +59,7 @@ clang out.s -o calc
 
 ## LLVM IR
 
-Example LLVM IR produced by compiling fibonacci:
+Example LLVM IR produced by compiling a fibonacci program:
 
 ```sh
 $ llvm-calc ir "fn fib(n) = if n < 2 then n else fib(n-1) + fib(n-2); fib(10)"
