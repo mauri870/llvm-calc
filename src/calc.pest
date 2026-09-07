@@ -11,8 +11,14 @@ eq = { "==" }
 ne = { "!=" }
 lt = { "<" }
 gt = { ">" }
-cmpop = _{ le | ge | eq | ne | lt | gt }
-cond  =  { expr ~ cmpop ~ expr }
+cmpop    = _{ le | ge | eq | ne | lt | gt }
+cmp_cond =  { expr ~ cmpop ~ expr }
+
+// Logical operators precedence: ! > && > ||
+not_cond  =  { "!" ~ cond_atom }
+cond_atom = _{ "(" ~ cond ~ ")" | not_cond | cmp_cond }
+and_cond  =  { cond_atom ~ ("&&" ~ cond_atom)* }
+cond      =  { and_cond ~ ("||" ~ and_cond)* }
 
 if_expr    = { "if" ~ cond ~ "then" ~ expr ~ "else" ~ expr }
 

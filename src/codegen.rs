@@ -8,7 +8,7 @@ use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
-use inkwell::values::{FloatValue, FunctionValue, PointerValue};
+use inkwell::values::{FloatValue, FunctionValue, IntValue, PointerValue};
 
 use crate::ast::{BinOp, Block, CmpOp, Cond, Expr, FnDef, Program};
 
@@ -196,6 +196,36 @@ impl<'ctx> CodeGen<'ctx> {
     //   %else_val = <else expr>; br label %merge
     // merge:
     //   %result = phi double [ %then_val, %then ], [ %else_val, %else ]
+    fn compile_cond(
+        &self,
+        cond: &Cond,
+        vars: &mut HashMap<String, PointerValue<'ctx>>,
+        function: FunctionValue<'ctx>,
+        fns: &HashMap<String, FunctionValue<'ctx>>,
+    ) -> Result<IntValue<'ctx>, String> {
+        match cond {
+            Cond::Cmp { op, left, right } => {
+                let l = self.compile_expr(left, vars, function, fns)?;
+                let r = self.compile_expr(right, vars, function, fns)?;
+                Ok(self.builder.build_float_compare(float_predicate(op), l, r, "cond").unwrap())
+            }
+            Cond::And(left, right) => {
+                let l = self.compile_cond(left, vars, function, fns)?;
+                let r = self.compile_cond(right, vars, function, fns)?;
+                Ok(self.builder.build_and(l, r, "and").unwrap())
+            }
+            Cond::Or(left, right) => {
+                let l = self.compile_cond(left, vars, function, fns)?;
+                let r = self.compile_cond(right, vars, function, fns)?;
+                Ok(self.builder.build_or(l, r, "or").unwrap())
+            }
+            Cond::Not(inner) => {
+                let v = self.compile_cond(inner, vars, function, fns)?;
+                Ok(self.builder.build_not(v, "not").unwrap())
+            }
+        }
+    }
+
     fn compile_if(
         &self,
         cond: &Cond,
@@ -205,11 +235,7 @@ impl<'ctx> CodeGen<'ctx> {
         function: FunctionValue<'ctx>,
         fns: &HashMap<String, FunctionValue<'ctx>>,
     ) -> Result<FloatValue<'ctx>, String> {
-        let l = self.compile_expr(&cond.left, vars, function, fns)?;
-        let r = self.compile_expr(&cond.right, vars, function, fns)?;
-        let cond_val = self.builder
-            .build_float_compare(float_predicate(&cond.op), l, r, "cond")
-            .unwrap();
+        let cond_val = self.compile_cond(cond, vars, function, fns)?;
 
         let then_block  = self.context.append_basic_block(function, "then");
         let else_block  = self.context.append_basic_block(function, "else");
@@ -268,11 +294,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.build_unconditional_branch(loop_header).unwrap();
 
         self.builder.position_at_end(loop_header);
-        let l = self.compile_expr(&cond.left, vars, function, fns)?;
-        let r = self.compile_expr(&cond.right, vars, function, fns)?;
-        let cond_val = self.builder
-            .build_float_compare(float_predicate(&cond.op), l, r, "while_cond")
-            .unwrap();
+        let cond_val = self.compile_cond(cond, vars, function, fns)?;
         self.builder.build_conditional_branch(cond_val, loop_body, loop_exit).unwrap();
 
         self.builder.position_at_end(loop_body);

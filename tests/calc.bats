@@ -314,6 +314,54 @@ setup_file() {
     [[ "$output" == *"0"* ]]
 }
 
+@test "logical and: both true" {
+    run "$BIN" "if 1 < 2 && 3 < 4 then 1 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1"* ]]
+}
+
+@test "logical and: one false" {
+    run "$BIN" "if 1 < 2 && 5 < 3 then 1 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"0"* ]]
+}
+
+@test "logical or: one true" {
+    run "$BIN" "if 1 < 2 || 5 < 3 then 1 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1"* ]]
+}
+
+@test "logical or: both false" {
+    run "$BIN" "if 5 < 3 || 5 < 3 then 1 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"0"* ]]
+}
+
+@test "logical not: negates true" {
+    run "$BIN" "if !(1 < 2) then 1 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"0"* ]]
+}
+
+@test "logical not: negates false" {
+    run "$BIN" "if !(5 < 3) then 1 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1"* ]]
+}
+
+@test "logical operators combined" {
+    run "$BIN" "if 1 < 2 && !(3 > 4) then 42 else 0"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"42"* ]]
+}
+
+@test "logical and in while condition" {
+    run "$BIN" "i=1; s=0; while i <= 5 && s < 10 do (s = s + i; i = i + 1; s)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"10"* ]]
+}
+
 @test "if with variable in condition" {
     run "$BIN" "n=5; if n < 10 then n else 0"
     [ "$status" -eq 0 ]

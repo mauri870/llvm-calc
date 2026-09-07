@@ -27,6 +27,8 @@ The `-O` flag accepts optimization levels like a C compiler: `-O0` (none), `-O1`
 
 Supported operators are `+` `-` `*` `/` with standard precedence and parentheses.
 
+Logical operators in the form `!`, `&&`, `||`.
+
 Variable bindings use the form `name=expr;` before the final expression.
 
 Functions use `fn f(x) = x*2;f(4)` syntax.

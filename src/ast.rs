@@ -17,10 +17,11 @@ pub enum CmpOp {
 }
 
 #[derive(Debug, Clone)]
-pub struct Cond {
-    pub op: CmpOp,
-    pub left: Box<Expr>,
-    pub right: Box<Expr>,
+pub enum Cond {
+    Cmp { op: CmpOp, left: Box<Expr>, right: Box<Expr> },
+    And(Box<Cond>, Box<Cond>),
+    Or(Box<Cond>, Box<Cond>),
+    Not(Box<Cond>),
 }
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,5 @@
 use pest::Parser;
-use pest::iterators::Pairs;
+use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest_derive::Parser;
 
@@ -85,7 +85,7 @@ fn build_if(mut pairs: Pairs<Rule>) -> Expr {
     let then_pair = pairs.next().unwrap();
     let else_pair = pairs.next().unwrap();
     Expr::If {
-        cond: Box::new(build_cond(cond_pair.into_inner())),
+        cond: Box::new(build_cond(cond_pair)),
         then: Box::new(build_expr(then_pair.into_inner())),
         else_: Box::new(build_expr(else_pair.into_inner())),
     }
@@ -95,7 +95,7 @@ fn build_while(mut pairs: Pairs<Rule>) -> Expr {
     let cond_pair  = pairs.next().unwrap();
     let block_pair = pairs.next().unwrap();
     Expr::While {
-        cond: Box::new(build_cond(cond_pair.into_inner())),
+        cond: Box::new(build_cond(cond_pair)),
         body: Box::new(build_block(block_pair.into_inner())),
     }
 }
@@ -129,21 +129,41 @@ fn build_block(pairs: Pairs<Rule>) -> Block {
     Block { bindings, body: Box::new(body.unwrap()) }
 }
 
-fn build_cond(mut pairs: Pairs<Rule>) -> Cond {
-    let left_pair  = pairs.next().unwrap();
-    let op_pair    = pairs.next().unwrap();
-    let right_pair = pairs.next().unwrap();
-    Cond {
-        op: match op_pair.as_rule() {
-            Rule::lt => CmpOp::Lt,
-            Rule::gt => CmpOp::Gt,
-            Rule::eq => CmpOp::Eq,
-            Rule::ne => CmpOp::Ne,
-            Rule::le => CmpOp::Le,
-            Rule::ge => CmpOp::Ge,
-            rule => unreachable!("unexpected cmpop rule: {rule:?}"),
-        },
-        left:  Box::new(build_expr(left_pair.into_inner())),
-        right: Box::new(build_expr(right_pair.into_inner())),
+fn build_cond(pair: Pair<Rule>) -> Cond {
+    match pair.as_rule() {
+        Rule::cond => {
+            let mut inner = pair.into_inner();
+            let first = build_cond(inner.next().unwrap());
+            inner.fold(first, |acc, p| Cond::Or(Box::new(acc), Box::new(build_cond(p))))
+        }
+        Rule::and_cond => {
+            let mut inner = pair.into_inner();
+            let first = build_cond(inner.next().unwrap());
+            inner.fold(first, |acc, p| Cond::And(Box::new(acc), Box::new(build_cond(p))))
+        }
+        Rule::not_cond => {
+            let inner = pair.into_inner().next().unwrap();
+            Cond::Not(Box::new(build_cond(inner)))
+        }
+        Rule::cmp_cond => {
+            let mut inner = pair.into_inner();
+            let left  = inner.next().unwrap();
+            let op    = inner.next().unwrap();
+            let right = inner.next().unwrap();
+            Cond::Cmp {
+                op: match op.as_rule() {
+                    Rule::lt => CmpOp::Lt,
+                    Rule::gt => CmpOp::Gt,
+                    Rule::eq => CmpOp::Eq,
+                    Rule::ne => CmpOp::Ne,
+                    Rule::le => CmpOp::Le,
+                    Rule::ge => CmpOp::Ge,
+                    rule => unreachable!("unexpected cmpop rule: {rule:?}"),
+                },
+                left:  Box::new(build_expr(left.into_inner())),
+                right: Box::new(build_expr(right.into_inner())),
+            }
+        }
+        rule => unreachable!("unexpected cond rule: {rule:?}"),
     }
 }
