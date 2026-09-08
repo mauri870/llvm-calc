@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+env:
+  LLVM_VERSION: "22"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install LLVM ${{ env.LLVM_VERSION }}
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh "$LLVM_VERSION"
+          # inkwell/llvm-sys expect this to locate llvm-config for LLVM 22.1.
+          echo "LLVM_SYS_221_PREFIX=/usr/lib/llvm-$LLVM_VERSION" >> "$GITHUB_ENV"
+          # tests/calc.bats shells out to unversioned opt/llc/clang.
+          sudo ln -sf "/usr/bin/clang-$LLVM_VERSION" /usr/bin/clang
+          sudo ln -sf "/usr/bin/llc-$LLVM_VERSION" /usr/bin/llc
+          sudo ln -sf "/usr/bin/opt-$LLVM_VERSION" /usr/bin/opt
+
+      - name: Install bats
+        run: sudo apt-get install -y bats
+
+      - name: Build
+        run: cargo build
+
+      - name: Run bats tests
+        run: bats tests/calc.bats
