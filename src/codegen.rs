@@ -23,6 +23,11 @@ pub struct CodeGen<'ctx> {
 // the same execution engine, so variable state must survive as actual LLVM
 // globals rather than allocas. The engine resolves a variable declared
 // `extern` in a later module against the module that first defined it.
+//
+// This relies on MCJIT's multi-module symbol resolution; ORC would be the
+// more modern fit (lazy compilation, and ResourceTracker for cleanly evicting
+// a single REPL line's definitions) but inkwell 0.10 has no ORCv2 bindings.
+// Tracked upstream: https://github.com/TheDan64/inkwell/issues/637
 pub struct ReplState<'ctx> {
     engine: Option<ExecutionEngine<'ctx>>,
     defined_vars: HashSet<String>,
