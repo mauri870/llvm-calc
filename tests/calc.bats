@@ -180,6 +180,25 @@ setup_file() {
     [[ "$output" == *"42"* ]]
 }
 
+@test "bare assignment evaluates to the assigned value" {
+    run "$BIN" "x=5"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"5"* ]]
+}
+
+@test "bare assignment after other bindings" {
+    run "$BIN" "a=3; b=4; c=a+b"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"7"* ]]
+}
+
+@test "repl bare assignment persists for later lines" {
+    run bash -c "printf 'x=5\nx+5\n' | $BIN"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"5"* ]]
+    [[ "$output" == *"10"* ]]
+}
+
 @test "variable used in expression" {
     run "$BIN" "x=10; x * 3"
     [ "$status" -eq 0 ]
@@ -258,6 +277,21 @@ setup_file() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"7"* ]]
     [[ "$output" == *"10"* ]]
+}
+
+@test "repl persists a variable across lines" {
+    run bash -c "printf 'x = 5; x\nx + 5\n' | $BIN"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"5"* ]]
+    [[ "$output" == *"10"* ]]
+}
+
+@test "repl persists multiple variables and mutation across lines" {
+    run bash -c "printf 'x = 5; x\ny = 10; y\nx + y\nx = x + 1; x\n' | $BIN"
+    [ "$status" -eq 0 ]
+    local expected
+    expected=$'5\n10\n15\n6'
+    [[ "$output" == *"$expected"* ]]
 }
 
 @test "repl recovers from parse errors" {

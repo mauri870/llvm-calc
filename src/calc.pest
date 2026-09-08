@@ -43,4 +43,8 @@ div = { "/" }
 
 expr    =  { primary ~ ((add | sub | mul | div) ~ primary)* }
 assign  =  { ident ~ "=" ~ expr }
-program = _{ SOI ~ (fn_def ~ ";")* ~ (assign ~ ";")* ~ expr ~ EOI }
+
+// The final statement may be a bare assignment (its assigned value becomes
+// the program's result) instead of requiring a trailing expression.
+// assign must come first so a plain assignment isn't parsed as a partial expr.
+program = _{ SOI ~ (fn_def ~ ";")* ~ (assign ~ ";")* ~ (assign | expr) ~ EOI }

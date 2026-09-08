@@ -96,6 +96,7 @@ fn repl() {
     let context = Context::create();
     let mut stdout = io::stdout();
     let stdin = io::stdin();
+    let mut state = codegen::ReplState::new();
 
     loop {
         print!("> ");
@@ -119,8 +120,8 @@ fn repl() {
         match parser::parse(input) {
             Ok(ast) => {
                 let cg = codegen::CodeGen::new(&context);
-                match cg.compile(&ast) {
-                    Ok(()) => cg.jit_run(),
+                match cg.compile_repl_line(&ast, &mut state) {
+                    Ok(fn_name) => cg.jit_run_repl_line(&fn_name, &mut state),
                     Err(e) => eprintln!("error: {e}"),
                 }
             }

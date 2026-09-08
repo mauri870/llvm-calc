@@ -37,7 +37,10 @@ pub fn parse(input: &str) -> Result<Program, String> {
                 let mut inner = pair.into_inner();
                 let name = inner.next().unwrap().as_str().to_string();
                 let expr_pair = inner.next().unwrap();
-                bindings.push((name, build_expr(expr_pair.into_inner())));
+                bindings.push((name.clone(), build_expr(expr_pair.into_inner())));
+                // If this assign is the final statement (not followed by
+                // another assign/expr), its value becomes the result.
+                body = Some(Expr::Var(name));
             }
             Rule::expr => {
                 body = Some(build_expr(pair.into_inner()));

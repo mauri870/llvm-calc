@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use inkwell::AddressSpace;
 use inkwell::FloatPredicate;
 use inkwell::OptimizationLevel;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
+use inkwell::execution_engine::ExecutionEngine;
 use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
@@ -16,6 +17,22 @@ pub struct CodeGen<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
+}
+
+// Persists across REPL lines, each line compiles into its own module added to
+// the same execution engine, so variable state must survive as actual LLVM
+// globals rather than allocas. The engine resolves a variable declared
+// `extern` in a later module against the module that first defined it.
+pub struct ReplState<'ctx> {
+    engine: Option<ExecutionEngine<'ctx>>,
+    defined_vars: HashSet<String>,
+    counter: u64,
+}
+
+impl<'ctx> ReplState<'ctx> {
+    pub fn new() -> Self {
+        Self { engine: None, defined_vars: HashSet::new(), counter: 0 }
+    }
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -74,6 +91,68 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap();
 
         Ok(())
+    }
+
+    // Compiles one REPL input into a uniquely-named function in this line's
+    // module. Variables bound in earlier lines are re-declared here as
+    // external globals so the engine links them to the module that first
+    // defined them; newly bound variables are defined (with a 0.0 initializer)
+    // here and become resolvable from later lines.
+    pub fn compile_repl_line(&self, program: &Program, state: &mut ReplState<'ctx>) -> Result<String, String> {
+        let i32_type = self.context.i32_type();
+        let f64_type = self.context.f64_type();
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+        let printf_type = i32_type.fn_type(&[ptr_type.into()], true);
+        let printf = self.module.add_function("printf", printf_type, None);
+
+        let fmt_str = self.context.const_string(b"%g\n", true);
+        let fmt_global = self.module.add_global(fmt_str.get_type(), None, "fmt");
+        fmt_global.set_initializer(&fmt_str);
+        fmt_global.set_linkage(Linkage::Private);
+        fmt_global.set_constant(true);
+
+        let fns = self.declare_functions(&program.functions);
+        for fn_def in &program.functions {
+            self.compile_fn(fn_def, &fns)?;
+        }
+
+        let fn_name = format!("__repl_line_{}", state.counter);
+        state.counter += 1;
+        let line_fn = self.module.add_function(&fn_name, i32_type.fn_type(&[], false), None);
+        let entry = self.context.append_basic_block(line_fn, "entry");
+        self.builder.position_at_end(entry);
+
+        let mut vars: HashMap<String, PointerValue<'ctx>> = HashMap::new();
+        for name in &state.defined_vars {
+            let global = self.module.add_global(f64_type, None, name);
+            vars.insert(name.clone(), global.as_pointer_value());
+        }
+
+        for (name, expr) in &program.bindings {
+            let val = self.compile_expr(expr, &mut vars, line_fn, &fns)?;
+            if let Some(&ptr) = vars.get(name.as_str()) {
+                self.builder.build_store(ptr, val).unwrap();
+            } else {
+                let global = self.module.add_global(f64_type, None, name);
+                global.set_initializer(&f64_type.const_float(0.0));
+                let ptr = global.as_pointer_value();
+                self.builder.build_store(ptr, val).unwrap();
+                vars.insert(name.clone(), ptr);
+                state.defined_vars.insert(name.clone());
+            }
+        }
+
+        let result = self.compile_expr(&program.body, &mut vars, line_fn, &fns)?;
+
+        self.builder
+            .build_call(printf, &[fmt_global.as_pointer_value().into(), result.into()], "")
+            .unwrap();
+        self.builder
+            .build_return(Some(&i32_type.const_int(0, false)))
+            .unwrap();
+
+        Ok(fn_name)
     }
 
     fn declare_functions(&self, defs: &[FnDef]) -> HashMap<String, FunctionValue<'ctx>> {
@@ -352,6 +431,25 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap();
         unsafe {
             ee.get_function::<unsafe extern "C" fn() -> i32>("main")
+                .unwrap()
+                .call();
+        }
+    }
+
+    // Adds this line's module to the session's execution engine (creating it
+    // on the first line) and runs the function compiled by compile_repl_line.
+    // Module ownership transfers to the engine.
+    pub fn jit_run_repl_line(&self, fn_name: &str, state: &mut ReplState<'ctx>) {
+        match &state.engine {
+            Some(ee) => ee.add_module(&self.module).unwrap(),
+            None => {
+                let ee = self.module.create_jit_execution_engine(OptimizationLevel::None).unwrap();
+                state.engine = Some(ee);
+            }
+        }
+        let ee = state.engine.as_ref().unwrap();
+        unsafe {
+            ee.get_function::<unsafe extern "C" fn() -> i32>(fn_name)
                 .unwrap()
                 .call();
         }
