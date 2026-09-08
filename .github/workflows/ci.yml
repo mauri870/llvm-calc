@@ -24,6 +24,8 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh "$LLVM_VERSION"
+          # llvm-sys links against Polly's static lib, which llvm.sh doesn't install by default.
+          sudo apt-get install -y "libpolly-$LLVM_VERSION-dev"
           # inkwell/llvm-sys expect this to locate llvm-config for LLVM 22.1.
           echo "LLVM_SYS_221_PREFIX=/usr/lib/llvm-$LLVM_VERSION" >> "$GITHUB_ENV"
           # tests/calc.bats shells out to unversioned opt/llc/clang.
