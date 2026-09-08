@@ -25,15 +25,21 @@ llvm-calc
 
 The `-O` flag accepts optimization levels like a C compiler: `-O0` (none), `-O1`, `-O2`, `-O3`.
 
-Supported operators are `+` `-` `*` `/` with standard precedence and parentheses.
+All values are `f64`.
 
-Logical operators in the form `!`, `&&`, `||`.
+Arithmetic operators are `+`, `-`, `*`, `/`, with standard precedence and parentheses.
 
-Variable bindings use the form `name=expr;` before the final expression.
+Comparison operators include `<`, `<=`, `>`, `>=`, `==`, and `!=`.
 
-Functions use `fn f(x) = x*2;f(4)` syntax.
+Logical operators are `!`, `&&`, and `||`.
 
-Loops can be written with `while`. 
+Variables are assigned with `name = expr`. Statements are separated by `;`.
+
+Functions use the form `fn f(x) = expr`.
+
+Conditionals use `if ... then ... else ...`.
+
+Loops can be written with `while`.
 
 All values are `f64`.
 
