@@ -1,8 +1,8 @@
 # llvm-calc
 
-A small turing-complete arithmetic expression compiler built to learn the LLVM toolchain.
+A small arithmetic expression language compiler built to learn the LLVM toolchain.
 
-The grammar is intentionally trivial so that effort goes into the compiler design.
+The language is intentionally small so that most of the effort goes into compiler design rather than language features.
 
 ## Pipeline
 
